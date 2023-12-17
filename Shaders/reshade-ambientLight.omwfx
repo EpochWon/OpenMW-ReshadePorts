@@ -1,0 +1,593 @@
+uniform_float alThreshold {
+	default = 0.15;
+	min = 0.0;
+	max = 1.0;
+	step = 0.01;
+	display_name = "Ambient Light Threshold";
+}
+
+uniform_bool AL_Dither {
+	default = true;
+	display_name = "Dithering";
+	description = "Applies dither - may cause diagonal stripes";
+}
+
+uniform_float alInt {
+	default = 10.15;
+	min = 0.0;
+	max = 20.0;
+	step = 0.1;
+	display_name = "Ambient Light Intensity";
+}
+
+uniform_bool AL_Adaptation {
+	default = true;
+	display_name = "Eye Adaptation";
+	header = "Eye Adaptation";
+}
+
+uniform_float alAdapt {
+	default = 0.7;
+	min = 0.0;
+	max = 4.0;
+	step = 0.01;
+	display_name = "Eye Adaptation Strength";
+}
+
+uniform_float alAdaptBaseMult {
+	default = 1.0;
+	min = 0.0;
+	max = 4.0;
+	step = 0.01;
+	display_name = "Eye Adaptation Base Multiplier";
+	description = "Multiplier for adaption applied to the original image";
+}
+
+uniform_int alAdaptBaseBlackLvL {
+	default = 2;
+	min = 0;
+	max = 4;
+	display_name = "Eye Adaptation Base Black Level";
+	description = "Distinction level of black and white (lower => less distinct)";
+}
+
+uniform_bool AL_Dirt {
+	default = true;
+	display_name = "Dirt";
+	header = "Dirt Texture";
+}
+
+uniform_bool AL_DirtTex {
+	default = false;
+	display_name = "Dirt Texture";
+	description = "Defines if dirt texture is used as overlay";
+}
+
+uniform_bool AL_Vibrance {
+	default = false;
+	display_name = "Dirt Texture Vibrance";
+	description = "Vibrance of dirt effect";
+}
+
+uniform_int AL_Adaptive {
+	default = 0;
+	min = 0;
+	max = 2;
+	display_name = "Colour Temperature";
+	description = "Warm, Cold, Light Dependent";
+}
+
+uniform_float alDirtInt {
+	default = 1.0;
+	min = 0.0;
+	max = 2.0;
+	step = 0.01;
+	display_name = "Dirt Intensity";
+	description = "Intensity of dirt effect";
+}
+
+uniform_float alDirtOVInt {
+	default = 1.0;
+	min = 0.0;
+	max = 2.0;
+	step = 0.01;
+	display_name = "Dirt Colour Intensity";
+	description = "Intensity of colored dirt effect";
+}
+
+uniform_bool AL_Lens {
+	default = false;
+	display_name = "Lens";
+	description = "Lens effect based on AL";
+	header = "Lens";
+}
+
+uniform_float alLensThresh {
+	default = 0.5;
+	min = 0.0;
+	max = 1.0;
+	step = 0.01;
+	display_name = "Lens Threshold";
+	description = "Reduces intensity of lens effect for not bright light";
+}
+
+uniform_float alLensInt {
+	default = 2.0;
+	min = 0.0;
+	max = 10.0;
+	step = 0.1;
+	display_name = "Lens Intensity";
+	description = "Intensity of lens effect";
+}
+
+uniform_bool alDebug {
+	default = false;
+	display_name = "Debug";
+	description = "Activates debug mode of AL, lower bar shows detected light, upper bar shows adaptation";
+	header = "Debug";
+}
+
+uniform_bool alToggle {
+	default = true;
+	display_name = "Toggle Shader";
+	description = "Toggle the entire shader";
+}
+
+uniform_vec2 pingpong {
+	default = vec2(1.0, 0.0);
+	max = vec2(6.28,6.28);
+	min = vec2(0.0,0.0);
+	step = 0.1;
+}
+
+sampler_2d dirtSampler {
+	source = "textures/ambientlight/Dirt.png";
+}
+
+sampler_2d dirtOVRSampler {
+	source = "textures/ambientlight/DirtOVR.png";
+}
+
+sampler_2d dirtOVBSampler {
+	source = "textures/ambientlight/DirtOVB.png";
+}
+
+sampler_2d lensDBSampler {
+	source = "textures/ambientlight/LensDB.png";
+}
+
+sampler_2d lensDB2Sampler {
+	source = "textures/ambientlight/LensDB2.png";
+}
+
+sampler_2d lensDOVSampler {
+	source = "textures/ambientlight/LensDOV.png";
+}
+
+sampler_2d lensDUVSampler {
+	source = "textures/ambientlight/LensDUV.png";
+}
+
+render_target RT_detectInt {
+	width = 32;
+    height = 32;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target RT_detectLow {
+	width = 1;
+    height = 1;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target RT_alIn {
+	width_ratio = 0.0625;
+	height_ratio = 0.0625;
+	source_type = float;
+	internal_format = rgba32f;
+	mipmaps = false;	
+}
+
+render_target RT_alOut {
+	width_ratio = 0.0625;
+	height_ratio = 0.0625;
+	source_type = float;
+	internal_format = rgba32f;
+	mipmaps = false;	
+}
+
+shared {
+	#define GEMFX_PIXEL_SIZE vec2(1.0f / (omw.resolution.x / 16.0f), 1.0f / (omw.resolution.y / 16.0f))
+	
+	/**
+	* Copyright (C) 2015 Ganossa (mediehawk@gmail.com)
+	*
+	* Permission is hereby granted, free of charge, to any person obtaining a copy of
+	* this software and associated documentation files (the "Software"), to deal in
+	* the Software with restriction, including without limitation the rights to
+	* use and/or sell copies of the Software, and to permit persons to whom the Software
+	* is furnished to do so, subject to the following conditions:
+	*
+	* The above copyright notice and the permission notices (this and below) shall
+	* be included in all copies or substantial portions of the Software.
+	*
+	* Permission needs to be specifically granted by the author of the software to any
+	* person obtaining a copy of this software and associated documentation files
+	* (the "Software"), to deal in the Software without restriction, including without
+	* limitation the rights to copy, modify, merge, publish, distribute, and/or
+	* sublicense the Software, and subject to the following conditions:
+	*
+	* The above copyright notice and the permission notices (this and above) shall
+	* be included in all copies or substantial portions of the Software.
+	*
+	* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	* SOFTWARE.
+	*/
+
+}
+
+fragment detectInt(target=RT_detectInt) {
+	omw_In vec2 omw_TexCoord;
+	
+	void main()
+	{
+		omw_FragColor = omw_GetLastShader(omw_TexCoord);
+	}
+}
+
+fragment detectLow(target=RT_detectLow, rt1=RT_detectInt) {
+	omw_In vec2 omw_TexCoord;
+	
+
+	void main()
+	{
+		vec4 detectLow = vec4(0.0);
+
+		if (omw_TexCoord.x != 0.5 && omw_TexCoord.y != 0.5)
+			discard;
+
+		for (float i = 0.0; i <= 1; i += 0.03125)
+		{
+			for (float j = 0.0; j <= 1; j += 0.03125)
+			{
+				detectLow.xyz += omw_Texture2D(RT_detectInt, vec2(i, j)).xyz;
+			}
+		}
+
+		detectLow.xyz /= 32 * 32;
+		omw_FragColor = detectLow;
+	}
+}
+
+fragment detectHigh(target=RT_alIn) {
+	omw_In vec2 omw_TexCoord;
+	
+	void main()
+	{
+		vec4 x = omw_GetLastShader(omw_TexCoord);
+		x = vec4(x.rgb * pow(abs(max(x.r, max(x.g, x.b))), 2.0), 1.0f);
+	
+		float base = (x.r + x.g + x.b); 
+		base /= 3;
+	
+		float nR = (x.r * 2) - base;
+		float nG = (x.g * 2) - base;
+		float nB = (x.b * 2) - base;
+	
+		if (nR < 0)
+		{
+			nG += nR / 2;
+			nB += nR / 2;
+			nR = 0;
+		}
+		if (nG < 0)
+		{
+			nB += nG / 2;
+			if (nR > -nG / 2) nR += nG / 2; else nR = 0;
+			nG = 0;
+		}
+		if (nB < 0)
+		{
+			if (nR > -nB / 2) nR += nB / 2; else nR = 0;
+			if (nG > -nB / 2) nG += nB / 2; else nG = 0;
+			nB = 0;
+		}
+	
+		if (nR > 1)
+		{
+			nG += (nR - 1) / 2;
+			nB += (nR - 1) / 2;
+			nR = 1;
+		}
+		if (nG > 1)
+		{
+			nB += (nG - 1) / 2;
+			if (nR + (nG - 1) < 1) nR += (nG - 1) / 2; else nR = 1;
+			nG = 1;
+		}
+		if (nB > 1)
+		{
+			if (nR + (nB - 1) < 1) nR += (nB - 1) / 2; else nR = 1;
+			if (nG + (nB - 1) < 1) nG += (nB - 1) / 2; else nG = 1;
+			nB = 1;
+		}
+	
+		x.r = nR; x.g = nG; x.b = nB;
+		
+		omw_FragColor = x;
+	}
+}
+
+fragment AL_HGB(target=RT_alOut, rt1=RT_alIn) {
+	omw_In vec2 omw_TexCoord;
+	
+	void main()
+	{
+		float sampleOffsets[5];	//= { 0.0, 2.4347826, 4.3478260, 6.2608695, 8.1739130 };
+		sampleOffsets[0] = 0.0;
+		sampleOffsets[1] = 2.4347826;
+		sampleOffsets[2] = 4.3478260;
+		sampleOffsets[3] = 6.2608695;
+		sampleOffsets[4] = 8.1739130;
+		
+		float sampleWeights[5]; //= { 0.16818994, 0.27276957, 0.111690125, 0.024067905, 0.0021112196 };
+		sampleWeights[0] = 0.16818994;
+		sampleWeights[1] = 0.27276957;
+		sampleWeights[2] = 0.111690125;
+		sampleWeights[3] = 0.024067905;
+		sampleWeights[4] = 0.0021112196;
+		
+		vec2 AL_t = pingpong;
+		
+		vec4 hgb = omw_Texture2D(RT_alIn, omw_TexCoord) * sampleWeights[0];
+		hgb = vec4(max(hgb.rgb - alThreshold, 0.0), hgb.a);
+		float stepMult = 1.08 + (AL_t.x / 100.0) * 0.02;
+	
+		if ((omw_TexCoord.x + sampleOffsets[1] * GEMFX_PIXEL_SIZE.x) < 1.05)
+			hgb += omw_Texture2D(RT_alIn, omw_TexCoord + vec2(sampleOffsets[1] * GEMFX_PIXEL_SIZE.x, 0.0)) * sampleWeights[1] * stepMult;
+		if ((omw_TexCoord.x - sampleOffsets[1] * GEMFX_PIXEL_SIZE.x) > -0.05)
+			hgb += omw_Texture2D(RT_alIn, omw_TexCoord - vec2(sampleOffsets[1] * GEMFX_PIXEL_SIZE.x, 0.0)) * sampleWeights[1] * stepMult;
+	
+		if ((omw_TexCoord.x + sampleOffsets[2] * GEMFX_PIXEL_SIZE.x) < 1.05)
+			hgb += omw_Texture2D(RT_alIn, omw_TexCoord + vec2(sampleOffsets[2] * GEMFX_PIXEL_SIZE.x, 0.0)) * sampleWeights[2] * stepMult;
+		if ((omw_TexCoord.x - sampleOffsets[2] * GEMFX_PIXEL_SIZE.x) > -0.05)
+			hgb += omw_Texture2D(RT_alIn, omw_TexCoord - vec2(sampleOffsets[2] * GEMFX_PIXEL_SIZE.x, 0.0)) * sampleWeights[2] * stepMult;
+	
+		if ((omw_TexCoord.x + sampleOffsets[3] * GEMFX_PIXEL_SIZE.x) < 1.05)
+			hgb += omw_Texture2D(RT_alIn, omw_TexCoord + vec2(sampleOffsets[3] * GEMFX_PIXEL_SIZE.x, 0.0)) * sampleWeights[3] * stepMult;
+		if ((omw_TexCoord.x - sampleOffsets[3] * GEMFX_PIXEL_SIZE.x) > -0.05)
+			hgb += omw_Texture2D(RT_alIn, omw_TexCoord - vec2(sampleOffsets[3] * GEMFX_PIXEL_SIZE.x, 0.0)) * sampleWeights[3] * stepMult;
+	
+		if ((omw_TexCoord.x + sampleOffsets[4] * GEMFX_PIXEL_SIZE.x) < 1.05)
+			hgb += omw_Texture2D(RT_alIn, omw_TexCoord + vec2(sampleOffsets[4] * GEMFX_PIXEL_SIZE.x, 0.0)) * sampleWeights[4] * stepMult;
+		if ((omw_TexCoord.x - sampleOffsets[4] * GEMFX_PIXEL_SIZE.x) > -0.05)
+			hgb += omw_Texture2D(RT_alIn, omw_TexCoord - vec2(sampleOffsets[4] * GEMFX_PIXEL_SIZE.x, 0.0)) * sampleWeights[4] * stepMult;
+			
+		omw_FragColor = hgb;
+	}
+}
+
+fragment AL_VGB(target=RT_alIn, rt1=RT_alOut) {
+	omw_In vec2 omw_TexCoord;
+	
+	void main()
+	{
+		float sampleOffsets[5];	//= { 0.0, 2.4347826, 4.3478260, 6.2608695, 8.1739130 };
+		sampleOffsets[0] = 0.0;
+		sampleOffsets[1] = 2.4347826;
+		sampleOffsets[2] = 4.3478260;
+		sampleOffsets[3] = 6.2608695;
+		sampleOffsets[4] = 8.1739130;
+		
+		float sampleWeights[5]; //= { 0.16818994, 0.27276957, 0.111690125, 0.024067905, 0.0021112196 };
+		sampleWeights[0] = 0.16818994;
+		sampleWeights[1] = 0.27276957;
+		sampleWeights[2] = 0.111690125;
+		sampleWeights[3] = 0.024067905;
+		sampleWeights[4] = 0.0021112196;
+	
+		vec2 AL_t = pingpong;
+		
+		vec4 vgb = omw_Texture2D(RT_alOut, omw_TexCoord) * sampleWeights[0];
+		vgb = vec4(max(vgb.rgb - alThreshold, 0.0), vgb.a);
+		float stepMult = 1.08 + (AL_t.x / 100) * 0.02;
+	
+		if ((omw_TexCoord.y + sampleOffsets[1] * GEMFX_PIXEL_SIZE.y) < 1.05)
+			vgb += omw_Texture2D(RT_alOut, omw_TexCoord + vec2(0.0, sampleOffsets[1] * GEMFX_PIXEL_SIZE.y)) * sampleWeights[1] * stepMult;
+		if ((omw_TexCoord.y - sampleOffsets[1] * GEMFX_PIXEL_SIZE.y) > -0.05)
+			vgb += omw_Texture2D(RT_alOut, omw_TexCoord - vec2(0.0, sampleOffsets[1] * GEMFX_PIXEL_SIZE.y)) * sampleWeights[1] * stepMult;
+	
+		if ((omw_TexCoord.y + sampleOffsets[2] * GEMFX_PIXEL_SIZE.y) < 1.05)
+			vgb += omw_Texture2D(RT_alOut, omw_TexCoord + vec2(0.0, sampleOffsets[2] * GEMFX_PIXEL_SIZE.y)) * sampleWeights[2] * stepMult;
+		if ((omw_TexCoord.y - sampleOffsets[2] * GEMFX_PIXEL_SIZE.y) > -0.05)
+			vgb += omw_Texture2D(RT_alOut, omw_TexCoord - vec2(0.0, sampleOffsets[2] * GEMFX_PIXEL_SIZE.y)) * sampleWeights[2] * stepMult;
+	
+		if ((omw_TexCoord.y + sampleOffsets[3] * GEMFX_PIXEL_SIZE.y) < 1.05)
+			vgb += omw_Texture2D(RT_alOut, omw_TexCoord + vec2(0.0, sampleOffsets[3] * GEMFX_PIXEL_SIZE.y)) * sampleWeights[3] * stepMult;
+		if ((omw_TexCoord.y - sampleOffsets[3] * GEMFX_PIXEL_SIZE.y) > -0.05)
+			vgb += omw_Texture2D(RT_alOut, omw_TexCoord - vec2(0.0, sampleOffsets[3] * GEMFX_PIXEL_SIZE.y)) * sampleWeights[3] * stepMult;
+	
+		if ((omw_TexCoord.y + sampleOffsets[4] * GEMFX_PIXEL_SIZE.y) < 1.05)
+			vgb += omw_Texture2D(RT_alOut, omw_TexCoord + vec2(0.0, sampleOffsets[4] * GEMFX_PIXEL_SIZE.y)) * sampleWeights[4] * stepMult;
+		if ((omw_TexCoord.y - sampleOffsets[4] * GEMFX_PIXEL_SIZE.y) > -0.05)
+			vgb += omw_Texture2D(RT_alOut, omw_TexCoord - vec2(0.0, sampleOffsets[4] * GEMFX_PIXEL_SIZE.y)) * sampleWeights[4] * stepMult;
+			
+		omw_FragColor = vgb;
+	}
+}
+
+fragment AL_Magic(rt1=RT_alIn, rt2=RT_detectLow) {
+	omw_In vec2 omw_TexCoord;
+	
+	void main()
+	{
+		vec4 base = omw_GetLastShader(omw_TexCoord);
+		vec4 high = omw_Texture2D(RT_alIn, omw_TexCoord);
+		float adapt = 0;
+		
+		vec2 AL_t = pingpong;
+		
+		if (AL_Adaptation)
+		{
+			//DetectLow
+			vec4 detectLow = omw_Texture2D(RT_detectLow, vec2(0.5)) / 4.215;
+			float low = sqrt(0.241 * detectLow.r * detectLow.r + 0.691 * detectLow.g * detectLow.g + 0.068 * detectLow.b * detectLow.b);
+			//.DetectLow
+	
+			low = pow(low * 1.25, 2.0);
+			adapt = low * (low + 1.0) * alAdapt * alInt * 5.0;
+	
+			if (alDebug)
+			{
+				float mod = mod((omw_TexCoord.x * 1000.0), 1.001);
+	
+				if (omw_TexCoord.y < 0.01f && (omw_TexCoord.x < low * 10f && mod < 0.3f))
+					base += vec4(1.0, 0.5, 0.3, 0.0);
+	
+				if (omw_TexCoord.y > 0.01f && omw_TexCoord.y < 0.02 && (omw_TexCoord.x < adapt / (alInt * 1.5) && mod < 0.3))
+					base += vec4(0.2, 1.0, 0.5, 0.0);
+			}
+		}
+		
+		high = min(vec4(0.0325), high) * 1.15;
+		vec4 highOrig = high;
+	
+		vec2 flipcoord = 1.0 - omw_TexCoord;
+		vec4 highFlipOrig = omw_Texture2D(RT_alIn, flipcoord);
+		highFlipOrig = min(vec4(0.03), highFlipOrig) * 1.15;
+	
+		vec4 highFlip = highFlipOrig;
+		vec4 highLensSrc = high;
+		
+		if (AL_Dirt)
+		{
+			vec4 dirt = omw_Texture2D(dirtSampler, omw_TexCoord);
+			vec4 dirtOVR = omw_Texture2D(dirtOVRSampler, omw_TexCoord);
+			vec4 dirtOVB = omw_Texture2D(dirtOVBSampler, omw_TexCoord);
+	
+			float maxhigh = max(high.r, max(high.g, high.b));
+			float threshDiff = maxhigh - 3.2;
+	
+			if (threshDiff > 0)
+			{
+				high.r = (high.r / maxhigh) * 3.2;
+				high.g = (high.g / maxhigh) * 3.2;
+				high.b = (high.b / maxhigh) * 3.2;
+			}
+	
+			vec4 highDirt = AL_DirtTex ? highOrig * dirt * alDirtInt : highOrig * high * alDirtInt;
+	
+			if (AL_Vibrance)
+			{
+				highDirt *= 1.0 + 0.5 * sin(AL_t.x);
+			}
+	
+			float highMix = highOrig.r + highOrig.g + highOrig.b;
+			float red = highOrig.r / highMix;
+			float green = highOrig.g / highMix;
+			float blue = highOrig.b / highMix;
+			highOrig = highOrig + highDirt;
+	
+			if (AL_Adaptive == 2)
+			{
+				high = high + high * dirtOVR * alDirtOVInt * green;
+				high = high + highDirt;
+				high = high + highOrig * dirtOVB * alDirtOVInt * blue;
+				high = high + highOrig * dirtOVR * alDirtOVInt* red;
+			}
+			else if (AL_Adaptive == 1)
+			{
+				high = high + highDirt;
+				high = high + highOrig * dirtOVB * alDirtOVInt;
+			}
+			else
+			{
+				high = high + highDirt;
+				high = high + highOrig * dirtOVR * alDirtOVInt;
+			}
+	
+			highLensSrc = high * 85 * pow(1.25 - (abs(omw_TexCoord.x - 0.5) + abs(omw_TexCoord.y - 0.5)), 2);
+		}
+	
+		float origBright = max(highLensSrc.r, max(highLensSrc.g, highLensSrc.b));
+		float maxOrig = max((1.8 * alLensThresh) - pow(origBright * (0.5 - abs(omw_TexCoord.x - 0.5)), 4.0), 0.0);
+		float smartWeight = maxOrig * max(abs(flipcoord.x - 0.5), 0.3 * abs(flipcoord.y - 0.5f)) * (2.2 - 1.2 * (abs(flipcoord.x - 0.5))) * alLensInt;
+		smartWeight = min(0.85, max(0, AL_Adaptation ? smartWeight - adapt : smartWeight));
+		
+		if (AL_Lens)
+		{
+			vec4 lensDB = omw_Texture2D(lensDBSampler, omw_TexCoord);
+			vec4 lensDB2 = omw_Texture2D(lensDB2Sampler, omw_TexCoord);
+			vec4 lensDOV = omw_Texture2D(lensDOVSampler, omw_TexCoord);
+			vec4 lensDUV = omw_Texture2D(lensDUVSampler, omw_TexCoord);
+	
+			vec4 highLens = highFlip * lensDB * 0.7 * smartWeight;
+			high += highLens;
+	
+			highLens = highFlipOrig * lensDUV * 1.15 * smartWeight;
+			highFlipOrig += highLens;
+			high += highLens;
+	
+			highLens = highFlipOrig * lensDB2 * 0.7 * smartWeight;
+			highFlipOrig += highLens;
+			high += highLens;
+	
+			highLens = highFlipOrig * lensDOV * 1.15 * smartWeight / 2.0 + highFlipOrig * smartWeight / 2.0;
+			highFlipOrig += highLens;
+			high += highLens;
+		}
+	
+		float dither = 0.0;
+		if (AL_Dither)
+		{
+			dither = 0.15 * (1.0 / (pow(2, 10.0) - 1.0));
+			dither = mix(2.0 * dither, -2.0 * dither, fract(dot(omw_TexCoord, omw.resolution * vec2(1.0 / 16.0, 10.0 / 36.0)) + 0.25));
+		}
+	
+		if (all(base.xyz == 1.0))
+		{
+			base.xyz = vec3(1.0);
+		}
+		
+		float baseSampleMix = 0.0;
+		
+		if (AL_Adaptation)
+		{
+			base.xyz *= max(0.0, (1.0 - adapt * 0.75 * alAdaptBaseMult * pow(abs(1.0 - (base.x + base.y + base.z) / 3), alAdaptBaseBlackLvL)));
+			vec4 highSampleMix = (1.0 - ((1.0 - base) * (1.0 - high * 1.0))) + dither;
+			vec4 baseSample = mix(base, highSampleMix, max(0.0, alInt - adapt));
+			float baseSampleMix = baseSample.r + baseSample.g + baseSample.b;
+			base = baseSampleMix > 0.008 ? baseSample : mix(base, highSampleMix, max(0.0, (alInt - adapt) * 0.85) * baseSampleMix);
+		}
+		else
+		{
+			vec4 highSampleMix = (1.0 - ((1.0 - base) * (1.0 - high * 1.0))) + dither + adapt;
+			vec4 baseSample = mix(base, highSampleMix, alInt);
+			float baseSampleMix = baseSample.r + baseSample.g + baseSample.b;
+			base = baseSampleMix > 0.008 ? baseSample : mix(base, highSampleMix, max(0.0, alInt * 0.85) * baseSampleMix);
+		}
+		
+		if (alToggle)
+		{
+			omw_FragColor = base;
+		} else {
+			omw_FragColor = omw_GetLastShader(omw_TexCoord);
+		}
+	}
+}
+technique {
+    description = "Ganossa's Ambient Light shader from ReShade
+	https://github.com/crosire/reshade-shaders/blob/legacy/Shaders/AmbientLight.fx";
+    passes = detectInt, detectLow, detectHigh, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_HGB, AL_VGB, AL_Magic;
+    version = "1.0";
+    author = "Ganossa, Ported by Epoch";
+}

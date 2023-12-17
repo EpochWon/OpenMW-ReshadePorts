@@ -1,0 +1,123 @@
+uniform_vec3 RGB_Curve {
+	default = vec3(8.0, 8.0, 8.0);
+	min = vec3(1.0, 1.0, 1.0);
+	max = vec3(15.0, 15.0, 15.0);
+	step = 1.0;
+}
+
+uniform_vec3 RGB_C {
+	default = vec3(0.36, 0.36, 0.36);
+	min = vec3(0.2, 0.2, 0.2);
+	max = vec3(0.5, 0.5, 0.5);
+	step = 0.01;
+}
+
+uniform_float uContrast {
+	default = 0.1;
+	min = 0.0;
+	max = 1.0;
+	step = 0.01;
+}
+
+uniform_float uSaturation {
+	default = 3.0;
+	min = 0.0;
+	max = 8.0;
+	step = 0.1;
+}
+
+uniform_float uColorfulness {
+	default = 2.5;
+	min = 0.1;
+	max = 2.5;
+	step = 0.01;
+}
+
+uniform_float uStrength {
+	default = 0.2;
+	min = 0.0;
+	max = 1.0;
+	step = 0.01;
+}
+
+uniform_bool uEnabled {
+	default = true;
+}
+
+shared {
+	//The MIT License (MIT)
+	//
+	//Copyright (c) 2014 CeeJayDK
+	//
+	//Permission is hereby granted, free of charge, to any person obtaining a copy
+	//of this software and associated documentation files (the "Software"), to deal
+	//in the Software without restriction, including without limitation the rights
+	//to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	//copies of the Software, and to permit persons to whom the Software is
+	//furnished to do so, subject to the following conditions:
+	//
+	//The above copyright notice and this permission notice shall be included in all
+	//copies or substantial portions of the Software.
+	//
+	//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	//AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	//SOFTWARE.
+}
+
+fragment main {
+	omw_In vec2 omw_TexCoord;
+	
+
+	void main()
+	{
+		mat3 RGB = mat3(
+			2.6714711726599600, -1.2672360578624100, -0.4109956021722270,
+			-1.0251070293466400,  1.9840911624108900,  0.0439502493584124,
+			0.0610009456429445, -0.2236707508128630,  1.1590210416706100
+		);
+		mat3 XYZ = mat3(
+			0.5003033835433160,  0.3380975732227390,  0.1645897795458570,
+			0.2579688942747580,  0.6761952591447060,  0.0658358459823868,
+			0.0234517888692628,  0.1126992737203000,  0.8668396731242010
+		);
+		
+		
+		vec3 scene = omw_GetLastShader(omw_TexCoord).rgb;
+		vec3 B = scene;
+		B = B * (1.0 - uContrast) + (0.5 * uContrast);
+		vec3 Btemp = (1.0 / (1.0 + exp(RGB_Curve / 2.0)));
+		B = ((1.0 / (1.0 + exp(-RGB_Curve * (B - RGB_C)))) / (-2.0 * Btemp + 1.0)) + (-Btemp / (-2.0 * Btemp + 1.0));
+		
+		float value = max(max(B.r, B.g), B.b);
+		vec3 color = B / value;
+		color.r = pow(abs(color.r), 1.0 / uColorfulness);
+		color.g = pow(abs(color.g), 1.0 / uColorfulness);
+		color.b = pow(abs(color.b), 1.0 / uColorfulness);
+		
+		vec3 c0 = color * value;
+		c0 = c0 * XYZ;
+		float luma = dot(c0, vec3(0.30, 0.59, 0.11));
+		c0 = (1.0 - uSaturation) * luma + uSaturation * c0;
+		c0 = c0 * RGB;
+		
+		
+		if (uEnabled) {
+			vec4 col = vec4(mix(scene, c0, uStrength), 1.0);
+			omw_FragColor = col;
+		} 
+		else {
+			omw_FragColor = vec4(scene, 1.0);
+		}
+	}
+}
+
+technique {
+    description = "reshade DPX, https://github.com/CeeJayDK/SweetFX";
+    passes = main;
+    version = "1.0";
+    author = "CeeJayDK, Ported by Epoch";
+}
