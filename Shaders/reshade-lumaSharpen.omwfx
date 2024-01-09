@@ -1,0 +1,203 @@
+uniform_float sharp_strength {
+	default = 0.65;
+	min = 0.1;
+	max = 3.0;
+	step = 0.01;
+	description = "Strength of the sharpening";
+	display_name = "Sharpening strength";
+}
+
+uniform_float sharp_clamp {
+	default = 0.035;
+	min = 0.0;
+	max = 1.0;
+	step = 0.005;
+	description = "Limits maximum amount of sharpening a pixel receives
+This helps avoid 'haloing' artifacts which would otherwise occur when you raised the strength too much.";
+	display_name = "Sharpening limit";
+}
+
+uniform_int pattern {
+	default = 1;
+	min = 0;
+	max = 3;
+	description = "Choose a sample pattern
+0 - Fast, is faster but slightly lower quality.
+1 - Normal, is normal.
+2 - Wider, is less sensitive to noise but also to fine details.
+3 - Pyramid, has a slightly more aggresive look.";
+	display_name = "Sample pattern";
+}
+
+uniform_float offset_bias {
+	default = 1.0;
+	min = 0.0;
+	max = 6.0;
+	step = 0.01;
+	description = "Offset bias adjusts the radius of the sampling pattern. I designed the pattern for an offset bias of 1.0, but feel free to experiment.";
+	display_name = "Offset bias";
+}
+
+uniform_bool show_sharpen {
+	default = false;
+	description = "Visualize the strength of the sharpen\nThis is useful for seeing what areas the sharpning affects the most";
+	display_name = "Show sharpening pattern";
+}
+
+uniform_bool uEnabled {
+	default = true;
+}
+
+shared {
+	/*
+	The MIT License (MIT)
+	
+	Copyright (c) 2014 CeeJayDK
+	
+	Permission is hereby granted, free of charge, to any person obtaining a copy
+	of this software and associated documentation files (the "Software"), to deal
+	in the Software without restriction, including without limitation the rights
+	to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	copies of the Software, and to permit persons to whom the Software is
+	furnished to do so, subject to the following conditions:
+	
+	The above copyright notice and this permission notice shall be included in all
+	copies or substantial portions of the Software.
+	
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	SOFTWARE.
+	*/
+	
+	#define CoefLuma vec3(0.2126, 0.7152, 0.0722)      // BT.709 & sRBG luma coefficient (Monitors and HD Television)
+	//#define CoefLuma vec3(0.299, 0.587, 0.114)       // BT.601 luma coefficient (SD Television)
+	//#define CoefLuma vec3(1.0/3.0, 1.0/3.0, 1.0/3.0) // Equal weight coefficient
+	
+	#define BUFFER_PIXEL_SIZE 1.0 / omw.resolution
+	
+	vec3 saturate(vec3 value) {
+		return clamp(value, 0.0, 1.0);
+	}
+	
+}
+
+fragment main {
+	omw_In vec2 omw_TexCoord;
+	
+
+	void main()
+	{
+		
+		vec3 ori = omw_GetLastShader(omw_TexCoord).rgb; // ori = original pixel
+		vec3 sharp_strength_luma = (CoefLuma * sharp_strength);
+		
+		// Sampling Patterns //
+		
+		vec3 blur_ori;
+		
+		// -- Pattern 1 -- A (fast) 7 tap gaussian using only 2+1 texture fetches.
+		if (pattern == 0) {
+			// -- Gaussian filter --
+			//   [ 1/9, 2/9,    ]     [ 1 , 2 ,   ]
+			//   [ 2/9, 8/9, 2/9]  =  [ 2 , 8 , 2 ]
+			//   [    , 2/9, 1/9]     [   , 2 , 1 ]
+			
+			blur_ori = omw_GetLastShader(omw_TexCoord + (BUFFER_PIXEL_SIZE / vec2(3.0)) * offset_bias).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord + (-BUFFER_PIXEL_SIZE / vec2(3.0)) * offset_bias).rgb;
+			
+			blur_ori /= 2;
+			sharp_strength_luma *= 1.5;
+		}
+		
+		// -- Pattern 2 -- A 9 tap gaussian using 4+1 texture fetches.
+		if (pattern == 1) {
+			// -- Gaussian filter --
+			//   [ .25, .50, .25]     [ 1 , 2 , 1 ]
+			//   [ .50,   1, .50]  =  [ 2 , 4 , 2 ]
+			//   [ .25, .50, .25]     [ 1 , 2 , 1 ]
+			
+			blur_ori = omw_GetLastShader(omw_TexCoord + vec2(BUFFER_PIXEL_SIZE.x, -BUFFER_PIXEL_SIZE.y) * 0.5 * offset_bias).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord - BUFFER_PIXEL_SIZE * 0.5 * offset_bias).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord + BUFFER_PIXEL_SIZE * 0.5 * offset_bias).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord - vec2(BUFFER_PIXEL_SIZE.x, -BUFFER_PIXEL_SIZE.y) * 0.5 * offset_bias).rgb;
+			
+			
+			blur_ori *= 0.25;
+		}
+		
+		// -- Pattern 3 -- An experimental 17 tap gaussian using 4+1 texture fetches.
+		if (pattern == 2) {
+			// -- Gaussian filter --
+			//   [   , 4 , 6 ,   ,   ]
+			//   [   ,16 ,24 ,16 , 4 ]
+			//   [ 6 ,24 ,   ,24 , 6 ]
+			//   [ 4 ,16 ,24 ,16 ,   ]
+			//   [   ,   , 6 , 4 ,   ]
+			
+			blur_ori = omw_GetLastShader(omw_TexCoord + BUFFER_PIXEL_SIZE * vec2(0.4, -1.2) * offset_bias).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord - BUFFER_PIXEL_SIZE * vec2(1.2, 0.4) * offset_bias).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord + BUFFER_PIXEL_SIZE * vec2(1.2, 0.4) * offset_bias).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord - BUFFER_PIXEL_SIZE * vec2(0.4, -1.2) * offset_bias).rgb;
+			
+			blur_ori *= 0.25;
+			
+			sharp_strength_luma *= 0.51;
+		}
+		
+		// -- Pattern 4 -- A 9 tap high pass (pyramid filter) using 4+1 texture fetches.
+		if (pattern == 3) {
+			// -- Gaussian filter --
+			//   [ .50, .50, .50]     [ 1 , 1 , 1 ]
+			//   [ .50,    , .50]  =  [ 1 ,   , 1 ]
+			//   [ .50, .50, .50]     [ 1 , 1 , 1 ]
+			
+			blur_ori = omw_GetLastShader(omw_TexCoord + vec2(0.5 * BUFFER_PIXEL_SIZE.x, -BUFFER_PIXEL_SIZE.y * offset_bias)).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord + vec2(offset_bias * -BUFFER_PIXEL_SIZE.x, 0.5 * -BUFFER_PIXEL_SIZE.y)).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord + vec2(offset_bias * BUFFER_PIXEL_SIZE.x, 0.5 * BUFFER_PIXEL_SIZE.y)).rgb;
+			blur_ori += omw_GetLastShader(omw_TexCoord + vec2(0.5 * -BUFFER_PIXEL_SIZE.x, BUFFER_PIXEL_SIZE.y * offset_bias)).rgb;
+			
+			blur_ori /= 4.0;
+			
+			sharp_strength_luma *= 0.666;
+		}
+		
+		// Sharpen //
+		vec3 sharp = ori - blur_ori;
+		
+		vec4 sharp_strength_luma_clamp = vec4(sharp_strength_luma * (0.5 / sharp_clamp), 0.5);
+		
+		float sharp_luma = dot(vec4(sharp, 1.0), sharp_strength_luma_clamp);
+		sharp_luma = (sharp_clamp * 2.0) * sharp_luma - sharp_clamp;
+		
+		// Output //
+		
+		vec3 outputcolor = ori + vec3(sharp_luma);
+		
+		if (uEnabled) {
+			if (show_sharpen) {
+				outputcolor = vec3(0.5 + (sharp_luma * 4.0));
+			}
+			omw_FragColor = vec4(saturate(outputcolor), 1.0);
+		} 
+		else {
+			omw_FragColor = vec4(ori, 1.0);
+		}
+	}
+}
+
+technique {
+    description = "reshade LumaSharpen, https://github.com/CeeJayDK/SweetFX
+LumaSharpen version 1.5.0
+by Christian Cann Schuldt Jensen ~ CeeJay.dk
+	
+It blurs the original pixel with the surrounding pixels and then subtracts this blur to sharpen the image.
+It does this in luma to avoid color artifacts and allows limiting the maximum sharpning to avoid or lessen halo artifacts.
+This is similar to using Unsharp Mask in Photoshop.";
+    passes = main;
+    version = "1.0";
+    author = "CeeJayDK, Ported by Epoch";
+}
