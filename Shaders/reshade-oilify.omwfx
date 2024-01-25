@@ -1,0 +1,194 @@
+uniform_float Sharpness {
+	default = 1.0;
+	min = 0.0;
+	max = 1.0;
+	step = 0.001;
+	display_name = "Sharpness";
+	description = "Higher settings result in a sharper image, while lower values give the image a more simplified look.";
+}
+
+uniform_float Tuning {
+	default = 2.0;
+	min = 0.0;
+	max = 4.0;
+	step = 0.01;
+	display_name = "Anistropy Tuning";
+	description = "Adjusts how elliptical the sampling can become with anisotropy. Smaller numbers mean more elliptical. (Use this if the shader looks stretched)";
+}
+
+uniform_float Scale {
+	default = 1.0;
+	min = 1.0;
+	max = 4.0;
+	step = 0.01;
+	display_name = "Scale";
+	description = "Similar to size it raises the range the effect is applied over, however, the number of samples remains unchanged resulting in a less, detailed image.";
+}
+
+uniform_bool uEnabled {
+	default = true;
+}
+
+shared {
+	vec3 saturate(vec3 value) {
+		return clamp(value, 0.0, 1.0);
+	}
+	
+	float saturate(float value) {
+		return clamp(value, 0.0, 1.0);
+	}
+	
+	const float PI = 3.1415926536;
+	const float GAUSSIAN_WEIGHTS[5] = float[5](0.095766, 0.303053, 0.20236, 0.303053, 0.095766);
+	const float GAUSSIAN_OFFSETS[5] = float[5](-3.2979345488, -1.40919905099, 0, 1.40919905099, 3.2979345488);
+	
+	float atan2(float y, float x) {
+		bool s = (abs(x) > abs(y));
+		return mix(PI/2.0 - atan(x,y), atan(y,x), s);
+	}
+	
+	#define OILIFY_SIZE 7
+	#define OILIFY_ITERATIONS 1
+}
+
+render_target RT_Anisotropy {
+	internal_format = rgba16f;
+}
+
+fragment anisotropy(target=RT_Anisotropy){
+	omw_In vec2 omw_TexCoord;
+	
+	void main()
+	{
+		vec3 center = omw_GetLastShader(omw_TexCoord).rgb * 255.0;
+		vec3 dx = center * GAUSSIAN_WEIGHTS[2];
+		vec3 dy = dx;
+		
+		for(int i = 0; i < 5; i++) {
+			if (i == 2) i++;
+			vec3 offsets = vec3(omw.rcpResolution, 0.0) * GAUSSIAN_OFFSETS[i];
+			dx += omw_GetLastShader(omw_TexCoord + offsets.xz).rgb * GAUSSIAN_WEIGHTS[i] * 255;
+			dy += omw_GetLastShader(omw_TexCoord + offsets.zy).rgb * GAUSSIAN_WEIGHTS[i] * 255;
+		}
+		dx = dFdx(dx);
+		dy = dFdy(dy);
+		
+		float e = dot(dx, dx);
+		float f = dot(dx, dy);
+		float g = dot(dy, dy);
+		float root = sqrt((e-g) * (e-g) + 4.0 * f * f);
+		vec2 eigenvalues = vec2(e + g + root, e + g - root) / 2.0;
+		
+		vec2 t;
+		if (any(greaterThan(abs(vec2(eigenvalues.x - e, -f)), vec2(1e-15)))) {
+			t = (normalize((vec2(eigenvalues.x - e, -f))));
+		} 
+		else
+			t = vec2(1.0, 0.0);
+		
+		float anisotropy = abs((eigenvalues.y - eigenvalues.x) / (eigenvalues.x + eigenvalues.y));
+		anisotropy *= anisotropy;
+		anisotropy = saturate(anisotropy);
+		anisotropy = max(anisotropy, 1e-15);
+		omw_FragColor.xyz = vec3(t, anisotropy);
+		omw_FragColor.w = 1;
+	}	
+}
+
+fragment kuwahara(rt1=RT_Anisotropy) {
+	omw_In vec2 omw_TexCoord;
+	
+	void main()
+	{
+		float sharpnessMultiplier = max(1023.0 * pow((2.0 * Sharpness / 3.0) + 0.333333, 4.0), 1e-10);
+		vec3 sum[6];
+		vec3 squaredSum[6];
+		float gaussianSum[6] = float[](0.0,0.0,0.0,0.0,0.0,0.0);
+		float sampleCount[6] = float[](0.0,0.0,0.0,0.0,0.0,0.0);
+		
+		float radius = length(vec2((float(OILIFY_SIZE) / 2.0), (float(OILIFY_SIZE) / 4.0)));
+		
+		vec3 anisotropyData = omw_Texture2D(RT_Anisotropy, omw_TexCoord).xyz;
+		vec2 t = anisotropyData.xy;
+		float anisotropy = anisotropyData.z;
+		float tuning = exp2(Tuning - 1.0);
+		mat2x2 tuningMatrix = mat2x2(tuning / (anisotropy + tuning), 0.0, 0.0, (tuning + anisotropy) / tuning);
+		mat2x2 rotationMatrix = mat2x2(t.x, -t.y, t.y, t.x);
+		mat2x2 offsetMatrix = rotationMatrix * tuningMatrix;
+		
+		for(int i = -(OILIFY_SIZE / 2); i < ((OILIFY_SIZE + 1) / 2); i++) {
+			for(int j = -(OILIFY_SIZE / 2); j < ((OILIFY_SIZE + 1) / 2); j++) {
+				vec2 offset = vec2(i, j);
+				if(abs(j) % 2 != 0) {
+					offset.y -= 0.5;
+				}
+				
+				if(all(ivec2(i, j) == 0)) {
+					for(int k = 0; k < 6; k++) {
+						vec3 color = omw_GetLastShader(omw_TexCoord).xyz * sharpnessMultiplier;
+						sum[k] += color;
+						squaredSum[k] += color * color;
+						sampleCount[k]++;
+					}
+				} else if(length(offset) <= radius) {
+					float angle = atan2(offset.x, offset.y) + PI; // might be this
+					if(angle > 5.75958653158) {
+						angle -= 2.0 * PI;
+					}
+					float sectorOffset = (float((angle * 6.0) / PI) + 1.0) / 2.0;
+					int sector = int(floor(sectorOffset));
+					sectorOffset -= float(sector);
+					offset *= omw.rcpResolution * Scale;
+					offset = offset * offsetMatrix;
+					vec3 color = omw_GetLastShader(omw_TexCoord - offset).rgb * sharpnessMultiplier;
+					sum[sector] += color;
+					squaredSum[sector] += color * color;
+					sampleCount[sector]++;
+				}
+			}
+		}
+		
+		vec3 weightedSum = vec3(0.0);
+		vec3 weightSum = vec3(0.0);
+		
+		for(int i = 0; i < 6; i++) {
+			vec3 sumSquared = sum[i] * sum[i];
+			vec3 mean = sum[i] / sampleCount[i];
+			vec3 variance = (squaredSum[i] - ((sumSquared) / sampleCount[i]));
+			variance /= sampleCount[0];
+			vec3 weight = vec3(1.0) / (1.0 + pow(sqrt(max(dot(variance, vec3(0.299, 0.587, 0.114)), 1e-5)), 8.0));
+			weightedSum += mean * weight;
+			weightSum += weight;
+		}
+		omw_FragColor.rgb = ((weightedSum) / weightSum) / sharpnessMultiplier;
+		omw_FragColor.w = 1.0;
+	}
+}
+
+fragment main {
+	omw_In vec2 omw_TexCoord;
+	
+
+	void main()
+	{
+		
+		vec3 scene = omw_GetLastShader(omw_TexCoord).rgb;
+		vec3 final = omw_GetLastPass(omw_TexCoord).rgb;
+		
+		if (uEnabled) {
+			vec4 col = vec4(final, 1.0);
+			omw_FragColor = col;
+		} 
+		else {
+			omw_FragColor = vec4(scene, 1.0);
+		}
+	}
+}
+
+technique {
+    description = "applies a Kuwahara filter using an optimized method for extracting the image mean and variance.
+github.com/LordOfLunacy/Insane-Shaders/blob/master/Shaders/Oilify.fx";
+    passes = anisotropy, kuwahara, main;
+    version = "1.0";
+    author = "Lord of Lunacy, ported by Epoch";
+}
