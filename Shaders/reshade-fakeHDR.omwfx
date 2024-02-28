@@ -1,0 +1,112 @@
+uniform_float HDRPower {
+	default = 1.30;
+	min = 0.0;
+	max = 8.0;
+	step = 0.01;
+	display_name = "Power";
+}
+
+uniform_float radius1 {
+	default = 0.793;
+	min = 0.0;
+	max = 8.0;
+	step = 0.001;
+	display_name = "Radius 1";
+}
+
+uniform_float radius2 {
+	default = 0.87;
+	min = 0.0;
+	max = 8.0;
+	step = 0.001;
+	display_name = "Radius 1";
+	description = "Raising this seems to make the effect stronger and also brighter.";
+}
+
+uniform_bool uEnabled {
+	default = true;
+}
+
+shared {
+	//The MIT License (MIT)
+	//
+	//Copyright (c) 2014 CeeJayDK
+	//
+	//Permission is hereby granted, free of charge, to any person obtaining a copy
+	//of this software and associated documentation files (the "Software"), to deal
+	//in the Software without restriction, including without limitation the rights
+	//to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+	//copies of the Software, and to permit persons to whom the Software is
+	//furnished to do so, subject to the following conditions:
+	//
+	//The above copyright notice and this permission notice shall be included in all
+	//copies or substantial portions of the Software.
+	//
+	//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+	//AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+	//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+	//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+	//SOFTWARE.
+	
+	vec3 saturate(vec3 value) {
+		return clamp(value, 0.0, 1.0);
+	}
+}
+
+fragment main {
+	omw_In vec2 omw_TexCoord;
+	
+
+	void main()
+	{
+		vec3 scene = omw_GetLastShader(omw_TexCoord).rgb;
+		vec3 color = scene;
+		
+		vec2 pixelSize = 1.0 / omw.resolution;
+		
+		vec3 bloom_sum1 = omw_GetLastShader(omw_TexCoord + vec2(1.5, -1.5) * radius1 * pixelSize).rgb;
+		bloom_sum1 += omw_GetLastShader(omw_TexCoord + vec2(-1.5, -1.5) * radius1 * pixelSize).rgb;
+		bloom_sum1 += omw_GetLastShader(omw_TexCoord + vec2( 1.5,  1.5) * radius1 * pixelSize).rgb;
+		bloom_sum1 += omw_GetLastShader(omw_TexCoord + vec2(-1.5,  1.5) * radius1 * pixelSize).rgb;
+		bloom_sum1 += omw_GetLastShader(omw_TexCoord + vec2( 0.0, -2.5) * radius1 * pixelSize).rgb;
+		bloom_sum1 += omw_GetLastShader(omw_TexCoord + vec2( 0.0,  2.5) * radius1 * pixelSize).rgb;
+		bloom_sum1 += omw_GetLastShader(omw_TexCoord + vec2(-2.5,  0.0) * radius1 * pixelSize).rgb;
+		bloom_sum1 += omw_GetLastShader(omw_TexCoord + vec2( 2.5,  0.0) * radius1 * pixelSize).rgb;
+		
+		bloom_sum1 *= 0.005;
+		
+		vec3 bloom_sum2 = omw_GetLastShader(omw_TexCoord + vec2(1.5, -1.5) * radius2 * pixelSize).rgb;
+		bloom_sum2 += omw_GetLastShader(omw_TexCoord + vec2(-1.5, -1.5) * radius2 * pixelSize).rgb;
+		bloom_sum2 += omw_GetLastShader(omw_TexCoord + vec2( 1.5,  1.5) * radius2 * pixelSize).rgb;
+		bloom_sum2 += omw_GetLastShader(omw_TexCoord + vec2(-1.5,  1.5) * radius2 * pixelSize).rgb;
+		bloom_sum2 += omw_GetLastShader(omw_TexCoord + vec2( 0.0, -2.5) * radius2 * pixelSize).rgb;
+		bloom_sum2 += omw_GetLastShader(omw_TexCoord + vec2( 0.0,  2.5) * radius2 * pixelSize).rgb;
+		bloom_sum2 += omw_GetLastShader(omw_TexCoord + vec2(-2.5,  0.0) * radius2 * pixelSize).rgb;
+		bloom_sum2 += omw_GetLastShader(omw_TexCoord + vec2( 2.5,  0.0) * radius2 * pixelSize).rgb;
+		
+		bloom_sum2 *= 0.010;
+		
+		float dist = radius2 - radius1;
+		vec3 HDR = (color + (bloom_sum2 - bloom_sum1)) * dist;
+		vec3 blend = HDR + color;
+		color = pow(abs(blend), vec3(abs(HDRPower))) + HDR;
+		
+		if (uEnabled) {
+			vec4 col = vec4(saturate(color), 1.0);
+			omw_FragColor = col;
+		} 
+		else {
+			omw_FragColor = vec4(scene, 1.0);
+		}
+	}
+}
+
+technique {
+    description = "reshade fakeHDR, https://github.com/CeeJayDK/SweetFX
+	Not actual HDR - It just tries to mimic an HDR look (relatively high performance cost)";
+    passes = main;
+    version = "1.0";
+    author = "CeeJayDK, Ported by Epoch";
+}
