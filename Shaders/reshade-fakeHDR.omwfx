@@ -19,7 +19,7 @@ uniform_float radius2 {
 	min = 0.0;
 	max = 8.0;
 	step = 0.001;
-	display_name = "Radius 1";
+	display_name = "Radius 2";
 	description = "Raising this seems to make the effect stronger and also brighter.";
 }
 
