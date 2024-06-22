@@ -1,0 +1,119 @@
+uniform_float AA_Power {
+    default = 0.75;
+    min = 0.5;
+    max = 1.0;
+    step = 0.01;
+}
+
+uniform_bool View_Mode {
+    default = false;
+}
+
+uniform_float Mask_Adjust {
+    default = 0.375;
+    min = 0.0;
+    max = 1.0;
+    step = 0.001;
+}
+
+uniform_bool uEnabled {
+	default = true;
+	header = "Debug";
+	display_name = "Enable Shader";
+	description = "Toggle the entire shader";
+}
+
+shared {
+    //* --------------------------
+    //* This work is licensed under a Creative Commons Attribution 3.0 Unported License.
+    //* So you are free to share, modify and adapt it for your needs, and even use it for commercial use.
+    //* I would also love to hear about a project you are using it with.
+    //* https://creativecommons.org/licenses/by/3.0/us/
+    //*
+    //* Have fun,
+    //* Jose Negrete AKA BlueSkyDefender
+    //* ---------------------------------
+
+    float LI(vec4 value) {
+        return dot(value.rgb, vec3(0.333));
+    }
+
+    vec2 EdgeDetection(vec2 TC, vec2 offset) {
+        vec2 X = vec2(offset.x, 0.0);
+        vec2 Y = vec2(0.0, offset.y);
+
+        float Left = LI(omw_GetLastShader(TC - X)) + LI(omw_GetLastShader(TC - X));
+        float Right = LI(omw_GetLastShader(TC + X)) + LI(omw_GetLastShader(TC + X));
+
+        float Up = LI(omw_GetLastShader(TC - Y)) + LI(omw_GetLastShader(TC - Y));
+        float Down = LI(omw_GetLastShader(TC + Y)) + LI(omw_GetLastShader(TC + Y));
+
+        return vec2(Down - Up, Right - Left) * 0.5;
+    }
+
+}
+
+fragment main {
+	omw_In vec2 omw_TexCoord;
+
+
+	void main()
+	{
+
+		if (uEnabled) {
+			vec4 Done = omw_GetLastShader(omw_TexCoord);
+            vec3 result = omw_GetLastShader(omw_TexCoord).rgb * (1.0 - AA_Power);
+            vec2 Offset = omw.rcpResolution;
+            vec2 X = vec2(omw.rcpResolution.x, 0.0);
+            vec2 Y = vec2(0.0, omw.rcpResolution.y);
+
+            vec2 Edge = EdgeDetection(omw_TexCoord, Offset);
+
+            vec2 N = vec2(Edge.x, -Edge.y);
+
+            Edge += EdgeDetection(omw_TexCoord -X, Offset);
+            Edge += EdgeDetection(omw_TexCoord +X, Offset);
+            Edge += EdgeDetection(omw_TexCoord -Y, Offset);
+            Edge += EdgeDetection(omw_TexCoord +Y, Offset);
+            Edge += EdgeDetection(omw_TexCoord -X -Y, Offset);
+            Edge += EdgeDetection(omw_TexCoord -X +Y, Offset);
+            Edge += EdgeDetection(omw_TexCoord +X -Y, Offset);
+            Edge += EdgeDetection(omw_TexCoord +X +Y, Offset);
+
+            bool Mask = length(N) < pow(0.002, Mask_Adjust);
+
+            if (Mask) {
+                result = omw_GetLastShader(omw_TexCoord).rgb;
+            }
+            else {
+                N = vec2(Edge.x, -Edge.y);
+                float AA_Adjust = AA_Power * (1.0 / 6.0);
+                result += omw_GetLastShader(omw_TexCoord + (N * 0.5)*Offset).rgb * AA_Adjust;
+                result += omw_GetLastShader(omw_TexCoord - (N * 0.5)*Offset).rgb * AA_Adjust;
+                result += omw_GetLastShader(omw_TexCoord + (N * 0.25)*Offset).rgb * AA_Adjust;
+                result += omw_GetLastShader(omw_TexCoord - (N * 0.25)*Offset).rgb * AA_Adjust;
+                result += omw_GetLastShader(omw_TexCoord + N * Offset).rgb * AA_Adjust;
+                result += omw_GetLastShader(omw_TexCoord - N * Offset).rgb * AA_Adjust;
+            }
+
+            if (View_Mode) {
+                Done = mix(vec4(1.0, 0.0, 1.0, 1.0), Done, Mask);
+            }
+            else {
+                Done = vec4(result, 1.0);
+            }
+
+            omw_FragColor = Done;
+		}
+		else {
+			omw_FragColor = omw_GetLastShader(omw_TexCoord);
+		}
+	}
+}
+
+technique {
+    description = "Bilinear Interpolation Anti Aliasing.";
+    passes = main;
+    version = "1.0";
+    author = "Jose Negrete AKA BlueSkyDefender, Ported by Epoch";
+}
