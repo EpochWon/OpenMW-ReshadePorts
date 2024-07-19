@@ -2,7 +2,7 @@ uniform_vec3 RGB_Lift {
 	default = vec3(1.0, 1.0, 1.0);
 	min = vec3(0.0, 0.0, 0.0);
 	max = vec3(2.0, 2.0, 2.0);
-	step = 0.01;
+	step = 0.001;
 	display_name = "RGB Lift";
 	description = "Adjust shadows for Red, Green and Blue.";
 }
@@ -11,7 +11,7 @@ uniform_vec3 RGB_Gamma {
 	default = vec3(1.0, 1.0, 1.0);
 	min = vec3(0.0, 0.0, 0.0);
 	max = vec3(2.0, 2.0, 2.0);
-	step = 0.01;
+	step = 0.001;
 	display_name = "RGB Lift";
 	description = "Adjust midtones for Red, Green and Blue.";
 }
@@ -20,7 +20,7 @@ uniform_vec3 RGB_Gain {
 	default = vec3(1.0, 1.0, 1.0);
 	min = vec3(0.0, 0.0, 0.0);
 	max = vec3(2.0, 2.0, 2.0);
-	step = 0.01;
+	step = 0.001;
 	display_name = "RGB Lift";
 	description = "Adjust highlights for Red, Green and Blue.";
 }
