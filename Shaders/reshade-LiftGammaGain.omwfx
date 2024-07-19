@@ -1,0 +1,77 @@
+uniform_vec3 RGB_Lift {
+	default = vec3(1.0, 1.0, 1.0);
+	min = vec3(0.0, 0.0, 0.0);
+	max = vec3(2.0, 2.0, 2.0);
+	step = 0.01;
+	display_name = "RGB Lift";
+	description = "Adjust shadows for Red, Green and Blue.";
+}
+
+uniform_vec3 RGB_Gamma {
+	default = vec3(1.0, 1.0, 1.0);
+	min = vec3(0.0, 0.0, 0.0);
+	max = vec3(2.0, 2.0, 2.0);
+	step = 0.01;
+	display_name = "RGB Lift";
+	description = "Adjust midtones for Red, Green and Blue.";
+}
+
+uniform_vec3 RGB_Gain {
+	default = vec3(1.0, 1.0, 1.0);
+	min = vec3(0.0, 0.0, 0.0);
+	max = vec3(2.0, 2.0, 2.0);
+	step = 0.01;
+	display_name = "RGB Lift";
+	description = "Adjust highlights for Red, Green and Blue.";
+}
+
+uniform_bool uEnabled {
+	default = true;
+}
+
+shared {
+	/**
+	* Lift Gamma Gain version 1.1
+	* by 3an and CeeJay.dk
+	*/
+	
+	vec3 saturate(vec3 value) {
+		return clamp(value, 0.0, 1.0);
+	}
+}
+
+fragment main {
+	omw_In vec2 omw_TexCoord;
+	
+
+	void main()
+	{
+		
+		vec3 scene = omw_GetLastShader(omw_TexCoord).rgb;
+		vec3 color = scene;
+
+		if (uEnabled) {
+			// lift
+			color = color * (1.5 - 0.5 * RGB_Lift) + 0.5 * RGB_Lift - 0.5;
+			color = saturate(color);
+
+			// gain
+			color *= RGB_Gain;
+
+			// gamma
+			color = pow(abs(color), 1.0 / RGB_Gamma);
+
+			omw_FragColor = vec4(saturate(color), 1.0);
+		} 
+		else {
+			omw_FragColor = vec4(scene, 1.0);
+		}
+	}
+}
+
+technique {
+    description = "Lift Gamma Gain version 1.1";
+    passes = main;
+    version = "1.0";
+    author = "3an and CeeJayDK, Ported by Epoch";
+}
