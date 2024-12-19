@@ -553,7 +553,7 @@ fragment AL_Magic(rt1=RT_alIn, rt2=RT_detectLow) {
 			dither = mix(2.0 * dither, -2.0 * dither, fract(dot(omw_TexCoord, omw.resolution * vec2(1.0 / 16.0, 10.0 / 36.0)) + 0.25));
 		}
 	
-		if (all(base.xyz == 1.0))
+		if (base.xyz == vec3(1.0))
 		{
 			base.xyz = vec3(1.0);
 		}
