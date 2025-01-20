@@ -1,0 +1,422 @@
+uniform_float fBloom_Intensity {
+	default = 1.0;
+	min = 0.0;
+	max = 10.0;
+	step = 0.01;
+	display_name = "Bloom Intensity";
+	description = "Amount of bloom applied to the image.";
+}
+
+uniform_float fBloom_Threshold {
+	default = 3.0;
+	min = 1.0;
+	max = 10.0;
+	step = 0.1;
+	display_name = "Bloom Threshold";
+	description = "Thresholds (limits) dark pixels from being accounted for bloom.
+Essentially, it increases the contrast in bloom and blackens darker pixels.
+At 1.0 all pixels are used in bloom.
+This value is not normalized, it is exponential, therefore changes in lower values are more noticeable than at higher values.";
+}
+
+uniform_float fDirt_Intensity {
+	default = 0.0;
+	min = 0.0;
+	max = 1.0;
+	step = 0.001;
+	display_name = "Dirt Intensity";
+	description = "Amount of lens dirt applied to bloom.";
+}
+
+uniform_float fExposure {
+	default = 0.2;
+	min = 0.0;
+	max = 1.0;
+	step = 0.001;
+	display_name = "Exposure";
+	description = "The target exposure that bloom adapts to.
+It is recommended to just leave it at 0.5, unless you wish for a brighter (1.0) or darker (0.0) image.";
+}
+
+uniform_int iBlurSamples {
+	default = 4;
+	min = 1;
+	max = 8;
+}
+
+uniform_bool uEnabled {
+	default = true;
+	header = "Debug";
+}
+
+uniform_bool uDebugView {
+	default = false;
+}
+
+
+render_target sMagicBloom_1 {
+	width_ratio = 0.5;
+    height_ratio = 0.5;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target sMagicBloom_2 {
+	width_ratio = 0.25;
+    height_ratio = 0.25;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target sMagicBloom_3 {
+	width_ratio = 0.125;
+    height_ratio = 0.125;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target sMagicBloom_4 {
+	width_ratio = 0.0625;
+    height_ratio = 0.0625;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target sMagicBloom_5 {
+	width_ratio = 0.03125;
+    height_ratio = 0.03125;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target sMagicBloom_6 {
+	width_ratio = 0.015625;
+    height_ratio = 0.015625;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target sMagicBloom_7 {
+	width_ratio = 0.0078125;
+    height_ratio = 0.0078125;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target sMagicBloom_8 {
+	width_ratio = 0.00390625;
+    height_ratio = 0.00390625;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target composite1 {
+	width_ratio = 1.0;
+    height_ratio = 1.0;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target composite2 {
+	width_ratio = 1.0;
+    height_ratio = 1.0;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+render_target composite3 {
+	width_ratio = 1.0;
+    height_ratio = 1.0;
+	source_type = float;
+	internal_format = rgba;
+	mipmaps = false;
+}
+
+sampler_2d sMagicBloom_Dirt {
+	source = "textures/MagicBloom_Dirt.png";
+}
+
+
+shared {
+	#define CONST_LOG(v) (((v) & 0xAAAAAAAA) != 0) | ((((v) & 0xFFFF0000) != 0) << 4) | ((((v) & 0xFF00FF00) != 0) << 3) | ((((v) & 0xF0F0F0F0) != 0) << 2) | ((((v) & 0xCCCCCCCC) != 0) << 1)
+
+	#ifndef MAGICBLOOM_ADAPT_RESOLUTION
+		#define MAGICBLOOM_ADAPT_RESOLUTION 256
+	#endif
+
+	#ifndef MAGICBLOOM_BLUR_PRECALCULATED
+		#define MAGICBLOOM_BLUR_PRECALCULATED 0
+	#endif
+
+	#ifndef MAGICBLOOM_NODIRT
+		#define MAGICBLOOM_NODIRT 0
+	#endif
+
+	#ifndef MAGICBLOOM_NOADAPT
+		#define MAGICBLOOM_NOADAPT 0
+	#endif
+
+	const int iAdaptResolution = MAGICBLOOM_ADAPT_RESOLUTION;
+	
+	float sigma = iBlurSamples / 2.0;
+	const float double_pi = 6.283185307179586476925286766559;
+	const vec3 luma_value = vec3(0.2126, 0.7152, 0.0722);
+	
+	#if !MAGICBLOOM_BLUR_PRECALCULATED
+	float gaussian_function(vec2 i) {
+		float first_part = 1.0 / (double_pi * pow(sigma, 2.0));
+		float second_part_a = 1.0 / (2.0 * pow(sigma, 2.0));
+		float second_part_b = (pow(i.x, 2.0) + pow(i.y, 2.0)) * second_part_a;
+		return first_part * exp(-second_part_b);
+	}
+	#endif
+	
+	vec3 blur(sampler2D sp, vec2 uv, float scale) {
+		vec2 ps = (uv.xy / omw.resolution) * scale;
+
+		#if MAGICBLOOM_BLUR_PRECALCULATED
+		const float kernel[9] = float[9] (
+			0.0269955, 0.0647588, 0.120985, 0.176033, 0.199471, 0.176033, 0.120985, 0.0647588, 0.0269955
+		);
+		const float accum = 1.02352;
+		#else
+		float accum = 0.0;
+		#endif
+
+		float gaussian_weight = 0.0;
+		vec3 col = vec3(0.0);
+
+		for (int x = -iBlurSamples; x <= iBlurSamples; ++x) {
+			for (int y = -iBlurSamples; y <= iBlurSamples; ++y) {
+				#if MAGICBLOOM_BLUR_PRECALCULATED
+				gaussian_weight = kernel[x + iBlurSamples] * kernel[y + iBlurSamples];
+				#else
+				gaussian_weight = gaussian_function(vec2(x, y));
+				accum += gaussian_weight;
+				#endif
+				col += omw_Texture2D(sp, uv + ps * vec2(x, y)).rgb * gaussian_weight;
+			}
+		}
+
+		#if MAGICBLOOM_BLUR_PRECALCULATED
+		return col * accum;
+		#else
+		return col / accum;
+		#endif
+	}
+
+	/*
+    Uncharted 2 Tonemapper
+
+    Thanks John Hable and Naughty Dog.
+	*/
+	vec3 tonemap(vec3 col, float exposure) {
+		const float A = 0.15; //shoulder strength
+		const float B = 0.50; //linear strength
+		const float C = 0.10; //linear angle
+		const float D = 0.20; //toe strength
+		const float E = 0.02; //toe numerator
+		const float F = 0.30; //toe denominator
+		const float W = 11.2; //linear white point value
+
+		col *= exposure;
+
+		col = ((col * (A * col + C * B) + D * E) / (col * (A * col + B) + D * F)) - E / F;
+		const float white = 1.0 / (((W * (A * W + C * B) + D * E) / (W * (A * W + B) + D * F)) - E / F);
+		col *= white;
+		return col;
+	}
+
+	vec3 blend_screen(vec3 a, vec3 b) {
+		return 1.0 - (1.0 - a) * (1.0 - b);
+	}
+	
+}
+
+fragment PS_Blur1(target=sMagicBloom_1) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		vec3 col = blur(omw_SamplerLastShader, omw_TexCoord, 2.0);
+		col = pow(abs(col), vec3(fBloom_Threshold));
+		col *= fBloom_Intensity;
+		omw_FragColor = vec4(col, 1.0);
+	}
+}
+
+fragment PS_Blur2(target=sMagicBloom_2, rt1=sMagicBloom_1) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		omw_FragColor = vec4(blur(sMagicBloom_1, omw_TexCoord, 4.0), 1.0);
+	}
+}
+
+fragment PS_Blur3(target=sMagicBloom_3, rt1=sMagicBloom_2) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		omw_FragColor = vec4(blur(sMagicBloom_2, omw_TexCoord, 8.0), 1.0);
+	}
+}
+
+fragment PS_Blur4(target=sMagicBloom_4, rt1=sMagicBloom_3) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		omw_FragColor = vec4(blur(sMagicBloom_3, omw_TexCoord, 16.0), 1.0);
+	}
+}
+
+fragment PS_Blur5(target=sMagicBloom_5, rt1=sMagicBloom_4) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		omw_FragColor = vec4(blur(sMagicBloom_4, omw_TexCoord, 32.0), 1.0);
+	}
+}
+
+fragment PS_Blur6(target=sMagicBloom_6, rt1=sMagicBloom_5) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		omw_FragColor = vec4(blur(sMagicBloom_5, omw_TexCoord, 64.0), 1.0);
+	}
+}
+
+fragment PS_Blur7(target=sMagicBloom_7, rt1=sMagicBloom_6) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		omw_FragColor = vec4(blur(sMagicBloom_6, omw_TexCoord, 128.0), 1.0);
+	}
+}
+
+fragment PS_Blur8(target=sMagicBloom_8, rt1=sMagicBloom_7) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		omw_FragColor = vec4(blur(sMagicBloom_7, omw_TexCoord, 256.0), 1.0);
+	}
+}
+
+fragment PS_Blend1(target=composite1, rt1=sMagicBloom_1, rt2=sMagicBloom_2, rt3=sMagicBloom_3) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		vec3 bloom = omw_Texture2D(sMagicBloom_1, omw_TexCoord).rgb
+			+ omw_Texture2D(sMagicBloom_2, omw_TexCoord).rgb
+			+ omw_Texture2D(sMagicBloom_3, omw_TexCoord).rgb;
+		omw_FragColor = vec4(bloom, 1.0);
+	}
+}
+
+fragment PS_Blend2(target=composite2, rt1=sMagicBloom_4, rt2=sMagicBloom_5, rt3=sMagicBloom_6) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		vec3 bloom = omw_Texture2D(sMagicBloom_4, omw_TexCoord).rgb
+			+ omw_Texture2D(sMagicBloom_5, omw_TexCoord).rgb
+			+ omw_Texture2D(sMagicBloom_6, omw_TexCoord).rgb;
+		omw_FragColor = vec4(bloom, 1.0);
+	}
+}
+
+fragment PS_Blend3(target=composite3, rt1=sMagicBloom_7, rt2=sMagicBloom_8) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		vec3 bloom = omw_Texture2D(sMagicBloom_7, omw_TexCoord).rgb
+			+ omw_Texture2D(sMagicBloom_8, omw_TexCoord).rgb;
+		omw_FragColor = vec4(bloom, 1.0);
+	}
+}
+
+fragment PS_Blend4(rt1=composite1, rt2=composite2, rt3=composite3) {
+	omw_In vec2 omw_TexCoord;
+
+	void main()
+	{
+		vec3 col = omw_GetLastShader(omw_TexCoord).rgb;
+		vec3 bloom = omw_Texture2D(composite1, omw_TexCoord).rgb
+			+ omw_Texture2D(composite2, omw_TexCoord).rgb
+			+ omw_Texture2D(composite3, omw_TexCoord).rgb;
+		const float bloom_accum = 1.0 / 8.0;
+		bloom *= bloom_accum;
+
+		#if !MAGICBLOOM_NOADAPT
+		float exposure = fExposure / max(omw_GetEyeAdaptation() / 10.0, 0.00001);
+		bloom = tonemap(bloom, exposure);
+		#else
+		//Without adaptation it seems 100.0 exposure is needed for bloom to look bright enough.
+		bloom = tonemap(bloom, 100.0);
+		#endif
+
+		#if !MAGICBLOOM_NODIRT
+		vec3 dirt = omw_Texture2D(sMagicBloom_Dirt, omw_TexCoord).rgb;
+		dirt *= fDirt_Intensity;
+		bloom = blend_screen(bloom, dirt * bloom);
+		#endif
+
+		col = blend_screen(col, bloom);
+
+		//If we're to display the bloom texture, we replace col with it.
+		col = uDebugView == true ? bloom : col;
+		col = uEnabled == true ? col : omw_GetLastShader(omw_TexCoord).rgb;
+
+		omw_FragColor = vec4(col, 1.0);
+	}
+}
+
+
+
+fragment main {
+	omw_In vec2 omw_TexCoord;
+	
+
+	void main()
+	{
+		
+		vec3 scene = omw_GetLastShader(omw_TexCoord).rgb;
+		
+		if (uEnabled) {
+			vec4 col = vec4(scene, 1.0);
+			omw_FragColor = col;
+		} 
+		else {
+			omw_FragColor = vec4(scene, 1.0);
+		}
+	}
+}
+
+technique {
+    description = "Reshade MagicBloom, by luluco250
+Attempts to simulate a natural-looking bloom.
+
+Work in progress, doesn't match the reshade version exactly, and the performance hit is pretty heavy";
+    passes = PS_Blur1, PS_Blur2, PS_Blur3, PS_Blur4, PS_Blur5, PS_Blur6, PS_Blur7, PS_Blur8, PS_Blend1, PS_Blend2, PS_Blend3, PS_Blend4;
+    version = "0.1";
+    author = "luluco250, ported by Epoch";
+	hdr = true;
+}
