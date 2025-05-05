@@ -102,4 +102,5 @@ technique {
     passes = main;
     version = "1.0";
     author = "AMD, Initial ReShade port by SLSNe, Ported by Epoch";
+    glsl_version = 130;
 }
