@@ -97,7 +97,7 @@ fragment main {
             }
 
             if (View_Mode) {
-                Done = mix(vec4(1.0, 0.0, 1.0, 1.0), Done, Mask);
+                Done = mix(vec4(1.0, 0.0, 1.0, 1.0), Done, float(Mask));
             }
             else {
                 Done = vec4(result, 1.0);
