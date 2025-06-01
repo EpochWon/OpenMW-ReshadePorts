@@ -123,7 +123,7 @@ fragment kuwahara(rt1=RT_Anisotropy) {
 					offset.y -= 0.5;
 				}
 				
-				if(all(ivec2(i, j) == 0)) {
+				if(i == 0 && j == 0)) {
 					for(int k = 0; k < 6; k++) {
 						vec3 color = omw_GetLastShader(omw_TexCoord).xyz * sharpnessMultiplier;
 						sum[k] += color;
